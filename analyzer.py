@@ -1,5 +1,8 @@
 import csv
 import sys
+from google import genai
+from dotenv import load_dotenv
+load_dotenv()
 
 
 def read_log(log_path:str):
@@ -49,6 +52,21 @@ def logs_in_date(logs_list:list, wanted_date:str)->list:
             date_rows.append(parts)
     return date_rows
 
+def explain_errors(common_errors:list)->str:
+    errors_text = ""
+    for error, count in common_errors:
+        errors_text += f"{error}: {count}\n"   
+    prompt = (
+        "הנה השגיאות הנפוצות ביותר בלוג של שרת, עם מספר ההופעות של כל אחת. " \
+            "לכל שגיאה, הסבר מה יכולה להיות הסיבה ומה כדאי לבדוק כדי לתקן. ענה בקצרה." 
+    )
+    client = genai.Client()
+    interaction = client.interactions.create(
+        model="gemini-3.5-flash-lite",
+        input = prompt +"\n"+ errors_text
+    )
+    return interaction.output_text
+
 
 
 def main():
@@ -73,6 +91,7 @@ def main():
     counts = count_error(log_list)
     common_errors = most_common(counts,severity)
     error_summary_file(common_errors)
+    print(explain_errors(common_errors))
     
 
 
