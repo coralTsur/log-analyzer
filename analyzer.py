@@ -4,6 +4,15 @@ from google import genai
 from dotenv import load_dotenv
 load_dotenv()
 
+SEVERITY = {
+        "Payment failed": 4,
+        "File not found": 2,
+        "Database connection timeout": 4,
+        "Out of memory": 5,
+        "Invalid user token": 2,
+        "Permission denied": 3,
+    }
+
 
 def read_log(log_path:str):
     lines_list = []
@@ -73,14 +82,6 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python analyzer.py <logfile> [date]")
         sys.exit(1)
-    severity = {
-        "Payment failed": 4,
-        "File not found": 2,
-        "Database connection timeout": 4,
-        "Out of memory": 5,
-        "Invalid user token": 2,
-        "Permission denied": 3,
-    }
     log_path = sys.argv[1]
     date_filter = sys.argv[2] if len(sys.argv) == 3 else None
 
@@ -89,7 +90,7 @@ def main():
         logs_in_date_list = logs_in_date(log_list,date_filter)
         date_lines_file(logs_in_date_list)
     counts = count_error(log_list)
-    common_errors = most_common(counts,severity)
+    common_errors = most_common(counts,SEVERITY)
     error_summary_file(common_errors)
     print(explain_errors(common_errors))
     
