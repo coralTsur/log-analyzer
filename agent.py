@@ -2,17 +2,21 @@
 import json
 from google import genai
 from dotenv import load_dotenv
-from analyzer import read_log, count_error
+from analyzer import read_log, count_error, SEVERITY, most_common, logs_in_date
 load_dotenv()
 
+MAX_ROUNDS = 5
 
 # ---------- 2. הפונקציה (הכלי עצמו) ----------
 def get_error_counts(log_path: str) -> dict:
-    # TODO: לקרוא את הקובץ עם read_log
-    # TODO: להעביר את התוצאה ל-count_error
-    # TODO: להחזיר את המילון
     logs_list = read_log(log_path)
     return count_error(logs_list)
+
+def get_most_common(log_path: str, num:int)->list:
+    return most_common(get_error_counts(log_path),SEVERITY,num)
+
+def get_logs_in_date(log_path: str, wanted_date:str)->list:
+    return logs_in_date(read_log(log_path),wanted_date)
 
 # ---------- 3. התיאור (מה שהמודל רואה) ----------
 count_tool = {
@@ -28,49 +32,103 @@ count_tool = {
     }
 }
 
+most_common_tool = {
+    "type": "function",
+    "name": "get_most_common",
+    "description": "מחזירה את השגיאות הנפוצות ביותר בקובץ הלוג, ממוינות לפי מספר ההופעות. "
+    "כשיש שוויון, השגיאה החמורה יותר מופיעה קודם.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "log_path": {"type": "string", "description": "הנתיב לקובץ הלוג"},
+            "num": {"type": "integer", "description": "כמה שגיאות להחזיר. ברירת מחדל: 5"}
+        },
+        "required": ["log_path"]
+    }
+}
+
+logs_in_date_tool = {
+    "type": "function",
+    "name": "get_logs_in_date",
+    "description":"מחזירה את כל שורות הלוג (INFO, WARNING ו-ERROR) מתאריך מסוים, בפורמט המקורי שלהן.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "log_path": {"type": "string", "description": "הנתיב לקובץ הלוג"},
+            "wanted_date": {"type": "string", "description": "תאריך שממנו נרצה לראות לוגים בפורמט YYYY-MM-DD"}
+        },
+        "required": ["log_path","wanted_date"]
+    }
+}
+
 
 # ---------- 4. השיחה ----------
 def main():
     client = genai.Client()
+    rounds = 0
+    found_call = False
+    TOOLS = [count_tool,most_common_tool,logs_in_date_tool]
 
     # --- סבב 1: שולחים משימה + כלי ---
     interaction = client.interactions.create(
         model="gemini-3.5-flash-lite",
-        input="נתח את הקובץ app.log וכתוב אילו שגיאות הכי בעייתיות",
-        tools=[count_tool]
+        input="נתח את הקובץ app.log וכתוב אילו שגיאות היו בתאריך 2026-10-21",
+        tools=TOOLS
     )
-    # TODO: להדפיס את interaction.outputs ולהסתכל מה חזר
-    #print(dir(interaction)) 
+    #print(dir(interaction)) #helped me understand how to get to call_id, call_name ect. 
     #print(interaction)
-    for step in interaction.steps:
-        if step.type == "function_call":
-            call_id = step.id
-            call_name = step.name
-            path = step.arguments['log_path']
-            result = get_error_counts(path)
-            print(result)
-    # --- הרצת הכלי ---
-    # TODO: לעבור על interaction.outputs בלולאה
-    # TODO: למצוא פריט שה-type שלו "function_call"
-    # TODO: לקחת ממנו את log_path מתוך arguments
-    # TODO: לקרוא ל-get_error_counts עם הערך הזה, ולשמור את התוצאה
 
-    # --- סבב 2: מחזירים תוצאה, מקבלים תשובה ---
-    # TODO: קריאה נוספת ל-create עם previous_interaction_id
-    #       וב-input מילון function_result (ראי בהודעה הקודמת)
-    # TODO: להדפיס את output_text
-    interaction = client.interactions.create(
-        model="gemini-3.5-flash-lite",
-        previous_interaction_id=interaction.id,
-        input=[{
-            "type": "function_result",
-            "name": call_name,
-            "call_id": call_id,
-            "result": [{"type": "text", "text": json.dumps(result)}]
-        }],
-        tools=[count_tool]
-    )
-    print(interaction.output_text)
+    while (rounds < MAX_ROUNDS):
+        rounds += 1
+        found_call = False
+        for step in interaction.steps:
+            if step.type == "function_call":
+                found_call = True
+                call_id = step.id
+                call_name = step.name
+                #print(f"המודל ביקש: {call_name} {step.arguments}")
+
+                if (call_name =="get_error_counts"):
+                    path = step.arguments['log_path']
+                    result = get_error_counts(path)
+
+                elif (call_name == "get_most_common"):
+                    path = step.arguments['log_path']
+                    num = step.arguments.get("num", 5)
+                    result = get_most_common(path, num)
+
+                elif call_name == "get_logs_in_date":                    
+                    path = step.arguments['log_path']
+                    wanted_date = step.arguments['wanted_date']
+                    result = get_logs_in_date(path, wanted_date)
+                else:
+                    result= f"Unknown tool: {call_name}"
+                print(result)
+        if not found_call:
+            break
+        if rounds == MAX_ROUNDS:
+            break
+        interaction = client.interactions.create(
+                model="gemini-3.5-flash-lite",
+                previous_interaction_id=interaction.id,
+                input=[{
+                    "type": "function_result",
+                    "name": call_name,
+                    "call_id": call_id,
+                    "result": [{"type": "text", "text": json.dumps(result)}]
+                }],
+                tools=TOOLS
+            )
+
+    if found_call == False:
+        print(interaction.output_text)
+    else:
+        print(f"After {MAX_ROUNDS} attempts, we haven't reached an answer. " \
+        "Please try again—you might want to refine or be more specific with your requests.")
+
+
+    #print(get_most_common("app.log", 3))
+    #print(get_logs_in_date("app.log", "2026-10-21"))
 
 
 if __name__ == "__main__":
