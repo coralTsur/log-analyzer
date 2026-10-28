@@ -1,12 +1,27 @@
 # ---------- 1. imports ----------
 import json
+import sys
 from google import genai
 from dotenv import load_dotenv
 from analyzer import read_log, count_error, SEVERITY, most_common, logs_in_date
 load_dotenv()
 
 MAX_ROUNDS = 5
+REPORT_INSTRUCTIONS = """אתה מנתח לוגים של שרת.
+השתמש בכלים כדי לקבל נתונים. כל מספר בדוח חייב להגיע מתוצאה של כלי, אל תנחש.
 
+כל תשובה שלך היא דוח בעברית, בנוי בדיוק כך:
+
+## סיכום
+משפט אחד: המצב הכללי והבעיה העיקרית.
+
+## ממצאים
+רשימה של השגיאות הרלוונטיות לשאלה. לכל שגיאה: שם, מספר הופעות, והסבר קצר של מה היא אומרת.
+
+## המלצות
+רשימה ממוספרת של עד 3 פעולות, מהדחופה ביותר.
+
+אם השאלה לא קשורה לקובץ הלוג, כתוב זאת בסעיף הסיכום והשאר את שאר הסעיפים ריקים."""
 # ---------- 2. הפונקציה (הכלי עצמו) ----------
 def get_error_counts(log_path: str) -> dict:
     logs_list = read_log(log_path)
@@ -69,10 +84,19 @@ def main():
     found_call = False
     TOOLS = [count_tool,most_common_tool,logs_in_date_tool]
 
+    if len(sys.argv) < 2:
+        print("Usage: python analyzer.py <logfile> [date]")
+        sys.exit(1)
+    log_path = sys.argv[1]
+    question = sys.argv[2] if len(sys.argv) == 3 else "נתח את הקובץ וכתוב אילו שגיאות הכי בעייתיות"
+
     # --- סבב 1: שולחים משימה + כלי ---
     interaction = client.interactions.create(
         model="gemini-3.5-flash-lite",
-        input="נתח את הקובץ app.log וכתוב אילו שגיאות היו בתאריך 2026-10-21",
+        system_instruction=REPORT_INSTRUCTIONS,
+        input=f"קובץ הלוג: {log_path}\nשאלה: {question}",
+        #input="נתח את הקובץ app.log וכתוב אילו שגיאות היו בתאריך 2026-10-21",
+        #input = "מה השם של הצמח הכי נפוץ",
         tools=TOOLS
     )
     #print(dir(interaction)) #helped me understand how to get to call_id, call_name ect. 
@@ -103,13 +127,14 @@ def main():
                     result = get_logs_in_date(path, wanted_date)
                 else:
                     result= f"Unknown tool: {call_name}"
-                print(result)
+                #print(result)
         if not found_call:
             break
         if rounds == MAX_ROUNDS:
             break
         interaction = client.interactions.create(
                 model="gemini-3.5-flash-lite",
+                system_instruction=REPORT_INSTRUCTIONS,
                 previous_interaction_id=interaction.id,
                 input=[{
                     "type": "function_result",
@@ -122,6 +147,8 @@ def main():
 
     if found_call == False:
         print(interaction.output_text)
+        with open("report.md", "w", encoding="utf-8") as f:
+            f.write(interaction.output_text)
     else:
         print(f"After {MAX_ROUNDS} attempts, we haven't reached an answer. " \
         "Please try again—you might want to refine or be more specific with your requests.")
