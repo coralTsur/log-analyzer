@@ -85,7 +85,7 @@ def main():
     TOOLS = [count_tool,most_common_tool,logs_in_date_tool]
 
     if len(sys.argv) < 2:
-        print("Usage: python analyzer.py <logfile> [date]")
+        print('Usage: python agent.py <logfile> ["question"]')
         sys.exit(1)
     log_path = sys.argv[1]
     question = sys.argv[2] if len(sys.argv) == 3 else "נתח את הקובץ וכתוב אילו שגיאות הכי בעייתיות"
