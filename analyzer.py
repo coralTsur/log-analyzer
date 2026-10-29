@@ -48,7 +48,7 @@ def count_error(logs_list:list)->dict:
 
 def most_common(error_dict:dict, severity_dict:dict,num:int = 5)->list:
     sorted_counts = sorted(
-    error_dict.items(), key=lambda item: (item[1], severity_dict[item[0]]), reverse=True
+    error_dict.items(), key=lambda item: (item[1], severity_dict.get(item[0], 0)), reverse=True
     )
     return sorted_counts[0:num]
 

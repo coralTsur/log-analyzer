@@ -73,3 +73,12 @@ def test_logs_in_date_no_match_returns_empty():
     wanted_date = "2026-06-20"
 
     assert logs_in_date(logs, wanted_date) == []
+
+
+def test_most_common_unknown_error_does_not_crash():
+    error = {"known": 2, "unknown": 2}
+    severity = {"known": 1}
+
+    result = most_common(error, severity, 2)
+
+    assert result == [("known", 2), ("unknown", 2)]
